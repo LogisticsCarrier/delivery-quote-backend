@@ -1,5 +1,18 @@
 # delivery-quote-backend
 Submit Quote
+{
+  "name": "delivery-quote-backend",
+  "version": "1.0.0",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "nodemailer": "^6.10.0"
+  }
+}
 function submitQuote() {
 
     if (!lastQuote.total) {
