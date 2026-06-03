@@ -1,3 +1,5 @@
+const Stripe = require("stripe");
+const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
 const express = require("express");
 const cors = require("cors");
 const nodemailer = require("nodemailer");
@@ -51,6 +53,80 @@ app.post("/api/submit-quote", async (req, res) => {
   }
 });
 
+app.post("/api/create-checkout-session", async (req, res) => {
+  try {
+
+    const {
+      amount,
+      customerName,
+      email,
+      phone,
+      pickup,
+      dropoff
+    } = req.body;
+
+    if (!amount || Number(amount) <= 0) {
+      return res.status(400).json({
+        error: "Invalid amount"
+      });
+    }
+
+    const session =
+      await stripe.checkout.sessions.create({
+
+        payment_method_types: ["card"],
+
+        mode: "payment",
+
+        customer_email: email || undefined,
+
+        line_items: [
+          {
+            price_data: {
+              currency: "usd",
+
+              product_data: {
+                name: "Delivery Service Payment",
+
+                description:
+                  `Pickup: ${pickup || "N/A"} | Dropoff: ${dropoff || "N/A"}`
+              },
+
+              unit_amount:
+                Math.round(Number(amount) * 100)
+            },
+
+            quantity: 1
+          }
+        ],
+
+        metadata: {
+          customerName: customerName || "",
+          phone: phone || "",
+          pickup: pickup || "",
+          dropoff: dropoff || ""
+        },
+
+        success_url:
+          "https://YOUR-WEBSITE.com/payment-success.html",
+
+        cancel_url:
+          "https://YOUR-WEBSITE.com/payment-cancelled.html"
+      });
+
+    res.json({
+      url: session.url
+    });
+
+  } catch (error) {
+
+    console.error("Stripe error:", error);
+
+    res.status(500).json({
+      error: "Unable to create checkout session"
+    });
+  }
+});
 const PORT = process.env.PORT || 10000;
 
 app.listen(PORT, () => {
