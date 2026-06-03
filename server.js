@@ -1,8 +1,8 @@
-const Stripe = require("stripe");
-const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
 const express = require("express");
 const cors = require("cors");
 const nodemailer = require("nodemailer");
+const Stripe = require("stripe");
+const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
 
 const app = express();
 
@@ -108,10 +108,10 @@ app.post("/api/create-checkout-session", async (req, res) => {
         },
 
         success_url:
-          "https://YOUR-WEBSITE.com/payment-success.html",
+          "https://logistics-carrier.com/payment-success.html",
 
         cancel_url:
-          "https://YOUR-WEBSITE.com/payment-cancelled.html"
+          "https://logistics-carrier.com/payment-cancelled.html"
       });
 
     res.json({
@@ -123,7 +123,7 @@ app.post("/api/create-checkout-session", async (req, res) => {
     console.error("Stripe error:", error);
 
     res.status(500).json({
-      error: "Unable to create checkout session"
+      error: error.message
     });
   }
 });
