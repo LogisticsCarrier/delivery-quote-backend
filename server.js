@@ -11,10 +11,8 @@ app.get("/", (req, res) => {
   res.send("Delivery quote backend is running.");
 });
 
-function yesNo(value) {
-  if (value === true) return "Yes";
-  if (value === false) return "No";
-  return value || "Not provided";
+function value(data) {
+  return data || "Not provided";
 }
 
 app.post("/api/submit-quote", async (req, res) => {
@@ -29,72 +27,94 @@ app.post("/api/submit-quote", async (req, res) => {
       }
     });
 
+    const isFreightForm =
+      data.formType === "Business & Expedited Freight Quote Request" ||
+      data.businessName ||
+      data.freightDescription;
+
+    const subject = isFreightForm
+      ? `New Freight Quote Request - ${value(data.businessName)}`
+      : `New Delivery Quote Request - ${value(data.customerName)}`;
+
+    const html = isFreightForm
+      ? `
+        <h2>New Business & Expedited Freight Quote Request</h2>
+
+        <h3>Customer / Business Information</h3>
+        <p><strong>Business Name:</strong> ${value(data.businessName)}</p>
+        <p><strong>Contact Person:</strong> ${value(data.contactPerson)}</p>
+        <p><strong>Phone:</strong> ${value(data.phone)}</p>
+        <p><strong>Email:</strong> ${value(data.email)}</p>
+        <p><strong>Business Type:</strong> ${value(data.businessType)}</p>
+
+        <h3>Pickup Information</h3>
+        <p><strong>Pickup Address:</strong> ${value(data.pickupAddress)}</p>
+        <p><strong>Pickup Date:</strong> ${value(data.pickupDate)}</p>
+        <p><strong>Pickup Time Window:</strong> ${value(data.pickupTime)}</p>
+        <p><strong>Dock Available:</strong> ${value(data.pickupDock)}</p>
+        <p><strong>Forklift Available:</strong> ${value(data.forklift)}</p>
+        <p><strong>Pickup Instructions:</strong> ${value(data.pickupInstructions)}</p>
+
+        <h3>Delivery Information</h3>
+        <p><strong>Delivery Address:</strong> ${value(data.deliveryAddress)}</p>
+        <p><strong>Delivery Date:</strong> ${value(data.deliveryDate)}</p>
+        <p><strong>Delivery Time Window:</strong> ${value(data.deliveryTime)}</p>
+        <p><strong>Delivery Dock Available:</strong> ${value(data.deliveryDock)}</p>
+        <p><strong>Delivery Type:</strong> ${value(data.deliveryType)}</p>
+        <p><strong>Delivery Instructions:</strong> ${value(data.deliveryInstructions)}</p>
+
+        <h3>Freight Details</h3>
+        <p><strong>Freight Description:</strong> ${value(data.freightDescription)}</p>
+        <p><strong>Number of Pieces:</strong> ${value(data.pieces)}</p>
+        <p><strong>Estimated Freight Value:</strong> $${value(data.freightValue)}</p>
+        <p><strong>Length:</strong> ${value(data.length)} inches</p>
+        <p><strong>Width:</strong> ${value(data.width)} inches</p>
+        <p><strong>Height:</strong> ${value(data.height)} inches</p>
+        <p><strong>Stackable:</strong> ${value(data.stackable)}</p>
+
+        <h3>Pricing Details</h3>
+        <p><strong>Estimated Loaded Miles:</strong> ${value(data.miles)}</p>
+        <p><strong>Service Speed:</strong> ${value(data.serviceSpeed)}</p>
+        <p><strong>Number of Stops:</strong> ${value(data.stops)}</p>
+        <p><strong>Service Vehicle:</strong> ${value(data.serviceVehicle)}</p>
+        <h2><strong>Estimated Quote:</strong> ${value(data.quoteAmount)}</h2>
+
+        <h3>Special Requirements</h3>
+        <p><strong>Inside Pickup:</strong> ${value(data.insidePickup)}</p>
+        <p><strong>Inside Delivery:</strong> ${value(data.insideDelivery)}</p>
+        <p><strong>Stairs Required:</strong> ${value(data.stairs)}</p>
+        <p><strong>Driver Assist:</strong> ${value(data.driverAssist)}</p>
+        <p><strong>TWIC Access Required:</strong> ${value(data.twic)}</p>
+        <p><strong>Fragile Freight:</strong> ${value(data.fragile)}</p>
+        <p><strong>High-Value Freight:</strong> ${value(data.highValue)}</p>
+        <p><strong>Proof of Delivery Required:</strong> ${value(data.proofDelivery)}</p>
+        <p><strong>Signature Required:</strong> ${value(data.signature)}</p>
+        <p><strong>Return Trip Needed:</strong> ${value(data.returnTrip)}</p>
+
+        <h3>Additional Notes</h3>
+        <p>${value(data.notes)}</p>
+      `
+      : `
+        <h2>New Delivery Quote Request</h2>
+
+        <p><strong>Customer Name:</strong> ${value(data.customerName)}</p>
+        <p><strong>Phone:</strong> ${value(data.phone || data.customerPhone)}</p>
+        <p><strong>Email:</strong> ${value(data.email || data.customerEmail)}</p>
+        <p><strong>Pickup:</strong> ${value(data.pickup || data.pickupAddress)}</p>
+        <p><strong>Dropoff:</strong> ${value(data.dropoff || data.deliveryAddress)}</p>
+        <p><strong>Pickup Date:</strong> ${value(data.pickupDate)}</p>
+        <p><strong>Pickup Time:</strong> ${value(data.pickupTime)}</p>
+        <p><strong>Delivery Date:</strong> ${value(data.deliveryDate)}</p>
+        <p><strong>Delivery Time:</strong> ${value(data.deliveryTime)}</p>
+        <p><strong>Item Description:</strong> ${value(data.description || data.itemDescription)}</p>
+        <h2><strong>Estimated Quote:</strong> ${value(data.quoteAmount)}</h2>
+      `;
+
     await transporter.sendMail({
       from: process.env.EMAIL_USER,
       to: process.env.QUOTE_RECEIVER_EMAIL,
-      subject: `New Pickup & Delivery Quote Request - ${data.customerName || "Customer"}`,
-      html: `
-        <h2>New Pickup & Delivery Quote Request</h2>
-
-        <h3>Customer Information</h3>
-        <p><strong>Customer Name:</strong> ${data.customerName || "Not provided"}</p>
-        <p><strong>Phone:</strong> ${data.phone || data.customerPhone || "Not provided"}</p>
-        <p><strong>Email:</strong> ${data.email || data.customerEmail || "Not provided"}</p>
-        <p><strong>Preferred Contact Method:</strong> ${data.contactMethod || "Not provided"}</p>
-
-        <h3>Store / Pickup Information</h3>
-        <p><strong>Store / Seller Name:</strong> ${data.sellerName || data.storeName || "Not provided"}</p>
-        <p><strong>Order Number / Pickup Number:</strong> ${data.orderNumber || "Not provided"}</p>
-        <p><strong>Pickup Address:</strong> ${data.pickup || data.pickupAddress || "Not provided"}</p>
-        <p><strong>Pickup Date:</strong> ${data.pickupDate || "Not provided"}</p>
-        <p><strong>Pickup Time:</strong> ${data.pickupTime || "Not provided"}</p>
-        <p><strong>Already Paid:</strong> ${data.isPaid || "Not provided"}</p>
-        <p><strong>Item Ready For Pickup:</strong> ${data.pickupReady || "Not provided"}</p>
-        <p><strong>Pickup Instructions:</strong> ${data.pickupInstructions || "None"}</p>
-        <p><strong>Pickup Authorization Agreement:</strong> ${yesNo(data.authorizationAgreement)}</p>
-
-        <h3>Drop-Off Information</h3>
-        <p><strong>Drop-Off Address:</strong> ${data.dropoff || data.deliveryAddress || "Not provided"}</p>
-        <p><strong>Delivery Date:</strong> ${data.deliveryDate || "Not provided"}</p>
-        <p><strong>Delivery Time:</strong> ${data.deliveryTime || "Not provided"}</p>
-        <p><strong>Drop-Off Location Type:</strong> ${data.deliveryLocationType || "Not provided"}</p>
-        <p><strong>Someone Present At Delivery:</strong> ${data.someonePresent || "Not provided"}</p>
-        <p><strong>Drop-Off Instructions:</strong> ${data.deliveryInstructions || "None"}</p>
-        <p><strong>Unattended Drop-Off Agreement:</strong> ${yesNo(data.dropoffAgreement)}</p>
-        <p><strong>Signature Required:</strong> ${data.signatureRequired || "No"}</p>
-
-        <h3>Item Information</h3>
-        <p><strong>Item Category:</strong> ${data.itemCategory || "Not provided"}</p>
-        <p><strong>Item Count:</strong> ${data.itemCount || "Not provided"}</p>
-        <p><strong>Item Description:</strong> ${data.description || data.itemDescription || "Not provided"}</p>
-        <p><strong>Estimated Weight:</strong> ${data.estimatedWeight || "Not provided"}</p>
-        <p><strong>Large / Oversized Item:</strong> ${data.largeItem || "Not provided"}</p>
-        <p><strong>Fragile:</strong> ${data.fragile || "Not provided"}</p>
-        <p><strong>Stairs:</strong> ${data.stairs || "Not provided"}</p>
-
-        <h3>Quote & Pricing Breakdown</h3>
-        <p><strong>Loaded Miles:</strong> ${data.loadedMiles || "Not calculated"}</p>
-        <p><strong>Estimated Drive Time:</strong> ${data.estimatedDriveTime || "Not calculated"}</p>
-        <p><strong>Billable Deadhead Miles:</strong> ${data.deadheadMiles || "Not calculated"}</p>
-
-        <p><strong>Base Rate:</strong> $${data.baseRate || "0.00"}</p>
-        <p><strong>Loaded Mileage Charge:</strong> $${data.loadedMileageCharge || "0.00"}</p>
-        <p><strong>Deadhead Charge:</strong> $${data.deadheadCharge || "0.00"}</p>
-        <p><strong>Item Category Fee:</strong> $${data.categoryFee || "0.00"}</p>
-        <p><strong>Weight Fee:</strong> $${data.weightFee || "0.00"}</p>
-        <p><strong>Stairs Fee:</strong> $${data.stairsFee || "0.00"}</p>
-        <p><strong>Large Item Fee:</strong> $${data.largeItemFee || "0.00"}</p>
-        <p><strong>Fragile Fee:</strong> $${data.fragileFee || "0.00"}</p>
-        <p><strong>Signature Fee:</strong> $${data.signatureFee || "0.00"}</p>
-        <p><strong>Additional Items Fee:</strong> $${data.additionalItemsFee || "0.00"}</p>
-
-        <h2>Total Quote: ${data.quoteAmount || "$" + (data.estimatedQuote || "0.00")}</h2>
-
-        <h3>Customer Agreements</h3>
-        <p><strong>Accuracy Agreement:</strong> ${yesNo(data.accuracyAgreement)}</p>
-        <p><strong>Quote Agreement:</strong> ${yesNo(data.quoteAgreement)}</p>
-        <p><strong>Contact Agreement:</strong> ${yesNo(data.contactAgreement)}</p>
-      `
+      subject,
+      html
     });
 
     res.json({ success: true });
