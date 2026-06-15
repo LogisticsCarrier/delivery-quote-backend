@@ -1,184 +1,32 @@
 const express = require("express");
 const cors = require("cors");
 const nodemailer = require("nodemailer");
-const { createClient } = require("@supabase/supabase-js");
 
 const app = express();
 
 app.use(cors());
-app.use(express.json({ limit: "1mb" }));
+app.use(express.json({ limit: "10mb" }));
 
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SECRET_KEY
-);
-
-app.get("/", (req, res) => {
-  res.send("Delivery quote backend is running.");
-});
-
-function value(input) {
-  return input === undefined || input === null || input === ""
-    ? "Not provided"
-    : input;
-}
+const PORT = process.env.PORT || 10000;
 
 function generateTrackingNumber() {
-  const datePart = new Date().toISOString().slice(0, 10).replace(/-/g, "");
-  const randomPart = Math.floor(1000 + Math.random() * 9000);
-  return `LC-${datePart}-${randomPart}`;
+  const date = new Date();
+  const yyyymmdd = date.toISOString().slice(0, 10).replace(/-/g, "");
+  const random = Math.floor(1000 + Math.random() * 9000);
+  return `LC-${yyyymmdd}-${random}`;
 }
 
-function isFreightQuote(data) {
-  return (
-    data.formType === "Business & Expedited Freight Quote Request" ||
-    data.businessName ||
-    data.freightDescription
-  );
-}
-
-async function saveQuoteToSupabase(data, trackingNumber, freightForm) {
-  const record = {
-    tracking_number: trackingNumber,
-    form_type: freightForm ? "freight" : "delivery",
-    customer_name: data.customerName || data.contactPerson || null,
-    business_name: data.businessName || null,
-    phone: data.phone || data.customerPhone || null,
-    email: data.email || data.customerEmail || null,
-    pickup_address: data.pickupAddress || data.pickup || null,
-    delivery_address: data.deliveryAddress || data.dropoff || null,
-    quote_amount: data.quoteAmount || data.estimatedQuote || null,
-    status: "Quote Submitted",
-    payment_status: "Payment Link Not Sent",
-    delivery_status: "Not Scheduled",
-    full_request: data
-  };
-
-  const { error } = await supabase
-    .from("quote_requests")
-    .insert([record]);
-
-  if (error) {
-    throw new Error(`Supabase error: ${error.message}`);
-  }
-}
-
-function buildEmail(data, trackingNumber, freightForm) {
-  if (freightForm) {
-    return `
-      <h2>New Freight Quote Request</h2>
-      <p><strong>Tracking Number:</strong> ${trackingNumber}</p>
-      <p><strong>Status:</strong> Quote Submitted</p>
-
-      <h3>Business Info</h3>
-      <p><strong>Business Name:</strong> ${value(data.businessName)}</p>
-      <p><strong>Contact Person:</strong> ${value(data.contactPerson)}</p>
-      <p><strong>Phone:</strong> ${value(data.phone)}</p>
-      <p><strong>Email:</strong> ${value(data.email)}</p>
-      <p><strong>Business Type:</strong> ${value(data.businessType)}</p>
-
-      <h3>Pickup</h3>
-      <p><strong>Pickup Address:</strong> ${value(data.pickupAddress)}</p>
-      <p><strong>Pickup Date:</strong> ${value(data.pickupDate)}</p>
-      <p><strong>Pickup Time:</strong> ${value(data.pickupTime)}</p>
-      <p><strong>Dock Available:</strong> ${value(data.pickupDock)}</p>
-      <p><strong>Forklift:</strong> ${value(data.forklift)}</p>
-      <p><strong>Pickup Instructions:</strong> ${value(data.pickupInstructions)}</p>
-
-      <h3>Delivery</h3>
-      <p><strong>Delivery Address:</strong> ${value(data.deliveryAddress)}</p>
-      <p><strong>Delivery Date:</strong> ${value(data.deliveryDate)}</p>
-      <p><strong>Delivery Time:</strong> ${value(data.deliveryTime)}</p>
-      <p><strong>Delivery Dock:</strong> ${value(data.deliveryDock)}</p>
-      <p><strong>Delivery Type:</strong> ${value(data.deliveryType)}</p>
-      <p><strong>Delivery Instructions:</strong> ${value(data.deliveryInstructions)}</p>
-
-      <h3>Freight Details</h3>
-      <p><strong>Description:</strong> ${value(data.freightDescription)}</p>
-      <p><strong>Pieces:</strong> ${value(data.pieces)}</p>
-      <p><strong>Freight Value:</strong> $${value(data.freightValue)}</p>
-      <p><strong>Dimensions:</strong> ${value(data.length)}L x ${value(data.width)}W x ${value(data.height)}H inches</p>
-      <p><strong>Stackable:</strong> ${value(data.stackable)}</p>
-
-      <h3>Pricing</h3>
-      <p><strong>Loaded Miles:</strong> ${value(data.miles)}</p>
-      <p><strong>Service Speed:</strong> ${value(data.serviceSpeed)}</p>
-      <p><strong>Stops:</strong> ${value(data.stops)}</p>
-      <p><strong>Vehicle:</strong> ${value(data.serviceVehicle)}</p>
-      <h2><strong>Estimated Quote:</strong> ${value(data.quoteAmount)}</h2>
-
-      <h3>Special Requirements</h3>
-      <p><strong>Inside Pickup:</strong> ${value(data.insidePickup)}</p>
-      <p><strong>Inside Delivery:</strong> ${value(data.insideDelivery)}</p>
-      <p><strong>Stairs:</strong> ${value(data.stairs)}</p>
-      <p><strong>Driver Assist:</strong> ${value(data.driverAssist)}</p>
-      <p><strong>TWIC:</strong> ${value(data.twic)}</p>
-      <p><strong>Fragile:</strong> ${value(data.fragile)}</p>
-      <p><strong>High Value:</strong> ${value(data.highValue)}</p>
-      <p><strong>Proof of Delivery:</strong> ${value(data.proofDelivery)}</p>
-      <p><strong>Signature:</strong> ${value(data.signature)}</p>
-      <p><strong>Return Trip:</strong> ${value(data.returnTrip)}</p>
-
-      <h3>Notes</h3>
-      <p>${value(data.notes)}</p>
-    `;
-  }
-
-  return `
-    <h2>New Pickup & Delivery Quote Request</h2>
-    <p><strong>Tracking Number:</strong> ${trackingNumber}</p>
-    <p><strong>Status:</strong> Quote Submitted</p>
-
-    <h3>Customer Info</h3>
-    <p><strong>Name:</strong> ${value(data.customerName)}</p>
-    <p><strong>Phone:</strong> ${value(data.phone || data.customerPhone)}</p>
-    <p><strong>Email:</strong> ${value(data.email || data.customerEmail)}</p>
-    <p><strong>Preferred Contact:</strong> ${value(data.contactMethod)}</p>
-
-    <h3>Pickup / Drop-Off</h3>
-    <p><strong>Store:</strong> ${value(data.sellerName || data.storeName)}</p>
-    <p><strong>Order Number:</strong> ${value(data.orderNumber)}</p>
-    <p><strong>Pickup:</strong> ${value(data.pickup || data.pickupAddress)}</p>
-    <p><strong>Drop-Off:</strong> ${value(data.dropoff || data.deliveryAddress)}</p>
-    <p><strong>Pickup Date:</strong> ${value(data.pickupDate)}</p>
-    <p><strong>Pickup Time:</strong> ${value(data.pickupTime)}</p>
-    <p><strong>Delivery Date:</strong> ${value(data.deliveryDate)}</p>
-    <p><strong>Delivery Time:</strong> ${value(data.deliveryTime)}</p>
-
-    <h3>Item Info</h3>
-    <p><strong>Description:</strong> ${value(data.description || data.itemDescription)}</p>
-    <p><strong>Category:</strong> ${value(data.itemCategory)}</p>
-    <p><strong>Item Count:</strong> ${value(data.itemCount)}</p>
-    <p><strong>Weight:</strong> ${value(data.estimatedWeight)}</p>
-    <p><strong>Large Item:</strong> ${value(data.largeItem)}</p>
-    <p><strong>Fragile:</strong> ${value(data.fragile)}</p>
-    <p><strong>Stairs:</strong> ${value(data.stairs)}</p>
-    <p><strong>Signature Required:</strong> ${value(data.signatureRequired)}</p>
-
-    <h3>Pricing</h3>
-    <p><strong>Loaded Miles:</strong> ${value(data.loadedMiles)}</p>
-    <p><strong>Drive Time:</strong> ${value(data.estimatedDriveTime)}</p>
-    <p><strong>Deadhead Miles:</strong> ${value(data.deadheadMiles)}</p>
-    <h2><strong>Estimated Quote:</strong> ${value(data.quoteAmount)}</h2>
-
-    <h3>Agreements</h3>
-    <p><strong>Cancellation Agreement:</strong> ${value(data.cancellationAgreement)}</p>
-    <p><strong>Refund Agreement:</strong> ${value(data.refundAgreement)}</p>
-    <p><strong>Non-Refundable Agreement:</strong> ${value(data.nonRefundableAgreement)}</p>
-  `;
-}
+app.get("/", (req, res) => {
+  res.json({
+    success: true,
+    message: "Logistics Carrier LLC backend is running"
+  });
+});
 
 app.post("/api/submit-quote", async (req, res) => {
   try {
     const data = req.body;
     const trackingNumber = generateTrackingNumber();
-    const freightForm = isFreightQuote(data);
-
-    await saveQuoteToSupabase(data, trackingNumber, freightForm);
-
-    const subject = freightForm
-      ? `New Freight Quote Request ${trackingNumber} - ${value(data.businessName)}`
-      : `New Delivery Quote Request ${trackingNumber} - ${value(data.customerName)}`;
 
     const transporter = nodemailer.createTransport({
       service: "gmail",
@@ -188,15 +36,87 @@ app.post("/api/submit-quote", async (req, res) => {
       }
     });
 
+    const emailBody = `
+NEW QUOTE REQUEST
+Tracking Number: ${trackingNumber}
+
+FORM TYPE:
+${data.formType || "Pickup & Delivery Quote Request"}
+
+CUSTOMER INFORMATION
+Name: ${data.customerName || data.businessName || "N/A"}
+Phone: ${data.phone || data.customerPhone || "N/A"}
+Email: ${data.email || data.customerEmail || "N/A"}
+Preferred Contact: ${data.contactMethod || "N/A"}
+
+STORE / PICKUP INFORMATION
+Store / Seller: ${data.sellerName || data.storeName || "N/A"}
+Order Number: ${data.orderNumber || "N/A"}
+Pickup Address: ${data.pickup || data.pickupAddress || "N/A"}
+Pickup Date: ${data.pickupDate || "N/A"}
+Pickup Time: ${data.pickupTime || "N/A"}
+Pickup Ready: ${data.pickupReady || "N/A"}
+Item Paid For: ${data.isPaid || "N/A"}
+Pickup Instructions: ${data.pickupInstructions || "N/A"}
+
+DROP-OFF INFORMATION
+Drop-Off Address: ${data.dropoff || data.deliveryAddress || "N/A"}
+Delivery Date: ${data.deliveryDate || "N/A"}
+Delivery Time: ${data.deliveryTime || "N/A"}
+Delivery Location Type: ${data.deliveryLocationType || "N/A"}
+Delivery Distance Type: ${data.deliveryDistanceType || "N/A"}
+Someone Present: ${data.someonePresent || "N/A"}
+Drop-Off Instructions: ${data.deliveryInstructions || "N/A"}
+Drop-Off Agreement: ${data.dropoffAgreement || "N/A"}
+
+ITEM INFORMATION
+Item Category: ${data.itemCategory || "N/A"}
+Main Description: ${data.description || data.itemDescription || "N/A"}
+Number of Items: ${data.itemCount || "N/A"}
+Total Pickup Item Quantity: ${data.totalPickupItemQuantity || "N/A"}
+Pickup Item Details: ${data.pickupItemsText || "N/A"}
+Estimated Weight: ${data.estimatedWeight || "N/A"}
+Fragile: ${data.fragile || "N/A"}
+Stairs: ${data.stairs || "N/A"}
+
+QUOTE CALCULATION
+Quote Amount: ${data.quoteAmount || "N/A"}
+Loaded Miles: ${data.loadedMiles || "N/A"}
+Estimated Drive Time: ${data.estimatedDriveTime || "N/A"}
+Distance Surcharge Miles: ${data.distanceSurchargeMiles || data.deadheadMiles || "N/A"}
+Distance Surcharge Charge: $${data.distanceSurchargeCharge || data.deadheadCharge || "0.00"}
+Base Rate: $${data.baseRate || "0.00"}
+Loaded Mileage Charge: $${data.loadedMileageCharge || "0.00"}
+Weight Fee: $${data.weightFee || "0.00"}
+Stairs Fee: $${data.stairsFee || "0.00"}
+Fragile Fee: $${data.fragileFee || "0.00"}
+Additional Items Fee: $${data.additionalItemsFee || "0.00"}
+
+AGREEMENTS
+Pickup Authorization: ${data.authorizationAgreement || "N/A"}
+Accuracy Agreement: ${data.accuracyAgreement || "N/A"}
+Quote Agreement: ${data.quoteAgreement || "N/A"}
+Contact Agreement: ${data.contactAgreement || "N/A"}
+Cancellation Agreement: ${data.cancellationAgreement || "N/A"}
+Refund Agreement: ${data.refundAgreement || "N/A"}
+Non-Refundable Agreement: ${data.nonRefundableAgreement || "N/A"}
+
+TRACKING DEFAULTS
+Status: Quote Submitted
+Payment Status: Payment Link Not Sent
+Delivery Status: Not Scheduled
+`;
+
     await transporter.sendMail({
-      from: process.env.EMAIL_USER,
-      to: process.env.QUOTE_RECEIVER_EMAIL,
-      subject,
-      html: buildEmail(data, trackingNumber, freightForm)
+      from: `"Logistics Carrier LLC" <${process.env.EMAIL_USER}>`,
+      to: process.env.QUOTE_RECEIVER_EMAIL || process.env.EMAIL_USER,
+      subject: `New Quote Request - ${trackingNumber}`,
+      text: emailBody
     });
 
     res.json({
       success: true,
+      message: "Quote request submitted successfully",
       trackingNumber
     });
 
@@ -205,44 +125,10 @@ app.post("/api/submit-quote", async (req, res) => {
 
     res.status(500).json({
       success: false,
-      error: error.message
+      error: error.message || "Unable to submit quote request"
     });
   }
 });
-
-app.get("/api/track/:trackingNumber", async (req, res) => {
-  try {
-    const trackingNumber = req.params.trackingNumber.toUpperCase();
-
-    const { data, error } = await supabase
-      .from("quote_requests")
-      .select("*")
-      .eq("tracking_number", trackingNumber)
-      .single();
-
-    if (error || !data) {
-      return res.status(404).json({
-        success: false,
-        error: "Tracking number not found."
-      });
-    }
-
-    res.json({
-      success: true,
-      quote: data
-    });
-
-  } catch (error) {
-    console.error("Tracking lookup error:", error);
-
-    res.status(500).json({
-      success: false,
-      error: "Unable to retrieve tracking information."
-    });
-  }
-});
-
-const PORT = process.env.PORT || 10000;
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
