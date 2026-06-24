@@ -1,3 +1,4 @@
+```js
 const express = require("express");
 const cors = require("cors");
 const nodemailer = require("nodemailer");
@@ -37,7 +38,7 @@ app.post("/api/submit-quote", async (req, res) => {
     });
 
     const emailBody = `
-NEW LOGISTICS CARRIER LLC QUOTE REQUEST
+NEW LOGISTICS CARRIER LLC REQUEST
 
 Tracking Number: ${trackingNumber}
 
@@ -54,6 +55,50 @@ Customer Name: ${data.customerName || "N/A"}
 Phone: ${data.phone || data.customerPhone || "N/A"}
 Email: ${data.email || data.customerEmail || "N/A"}
 Preferred Contact: ${data.contactMethod || "N/A"}
+
+==================================================
+COMMERCIAL ACCOUNT INFORMATION
+==================================================
+
+Business Type: ${data.businessType || "N/A"}
+Business Address: ${data.businessAddress || "N/A"}
+Business City: ${data.businessCity || "N/A"}
+Business State: ${data.businessState || "N/A"}
+Business Zip: ${data.businessZip || "N/A"}
+Website: ${data.website || "N/A"}
+Number of Locations: ${data.numberOfLocations || "N/A"}
+Multiple Locations: ${data.multipleLocations || "N/A"}
+
+Job Title: ${data.jobTitle || "N/A"}
+Mobile Number: ${data.mobileNumber || "N/A"}
+Contact Email: ${data.contactEmail || "N/A"}
+
+Delivery Types: ${data.deliveryTypes || "N/A"}
+Delivery Area: ${data.deliveryArea || "N/A"}
+Estimated Deliveries Per Month: ${data.estimatedDeliveries || "N/A"}
+
+Typical Items: ${data.typicalItems || "N/A"}
+Item Types: ${data.itemTypes || "N/A"}
+Weight Range: ${data.weightRange || "N/A"}
+Loading Assistance: ${data.loadingAssistance || "N/A"}
+Liftgate Service: ${data.liftgateService || "N/A"}
+TWIC Support: ${data.twicSupport || "N/A"}
+
+Legal Business Name: ${data.legalBusinessName || "N/A"}
+Billing Address: ${data.billingAddress || "N/A"}
+Billing City: ${data.billingCity || "N/A"}
+Billing State: ${data.billingState || "N/A"}
+Billing Zip: ${data.billingZip || "N/A"}
+Accounts Payable Contact: ${data.accountsPayableContact || "N/A"}
+Accounts Payable Email: ${data.accountsPayableEmail || "N/A"}
+Billing Method: ${data.billingMethod || "N/A"}
+Purchase Order Required: ${data.purchaseOrderRequired || "N/A"}
+Tax Exempt: ${data.taxExempt || "N/A"}
+
+Delivery Needs: ${data.deliveryNeeds || "N/A"}
+Lead Source: ${data.leadSource || "N/A"}
+Preferred Start Date: ${data.preferredStartDate || "N/A"}
+Commercial Account Consent: ${data.commercialAccountConsent || "N/A"}
 
 ==================================================
 PICKUP INFORMATION
@@ -158,21 +203,21 @@ Non-Refundable Agreement: ${data.nonRefundableAgreement || "N/A"}
 TRACKING DEFAULTS
 ==================================================
 
-Status: Quote Submitted
-Payment Status: Payment Link Not Sent
-Delivery Status: Not Scheduled
+Status: ${data.status || "Quote Submitted"}
+Payment Status: ${data.payment_status || "Payment Link Not Sent"}
+Delivery Status: ${data.delivery_status || "Not Scheduled"}
 `;
 
     await transporter.sendMail({
       from: `"Logistics Carrier LLC" <${process.env.EMAIL_USER}>`,
       to: process.env.QUOTE_RECEIVER_EMAIL || process.env.EMAIL_USER,
-      subject: `New Quote Request - ${trackingNumber}`,
+      subject: `New Logistics Carrier Request - ${trackingNumber}`,
       text: emailBody
     });
 
     res.json({
       success: true,
-      message: "Quote request submitted successfully",
+      message: "Request submitted successfully",
       trackingNumber
     });
 
@@ -181,7 +226,7 @@ Delivery Status: Not Scheduled
 
     res.status(500).json({
       success: false,
-      error: error.message || "Unable to submit quote request"
+      error: error.message || "Unable to submit request"
     });
   }
 });
@@ -189,3 +234,4 @@ Delivery Status: Not Scheduled
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
+```
