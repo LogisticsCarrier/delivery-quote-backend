@@ -1,12 +1,22 @@
 const express = require("express");
 const cors = require("cors");
 const nodemailer = require("nodemailer");
+const { createClient } = require("@supabase/supabase-js");
 
 const app = express();
 
 const PORT = process.env.PORT || 10000;
 
-// Your live website domains allowed to send requests to this backend.
+const EMAIL_USER = process.env.EMAIL_USER;
+const EMAIL_PASS = process.env.EMAIL_PASS;
+const QUOTE_RECEIVER_EMAIL =
+  process.env.QUOTE_RECEIVER_EMAIL || EMAIL_USER;
+
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_SECRET_KEY =
+  process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+// Add your live website domains here.
 const ALLOWED_ORIGINS = [
   "https://logistics-carrier.com",
   "https://www.logistics-carrier.com"
@@ -15,7 +25,7 @@ const ALLOWED_ORIGINS = [
 app.use(
   cors({
     origin: function (origin, callback) {
-      // Allows Render checks, Postman, and testing.
+      // Allows Render, Postman, and direct testing.
       if (!origin || ALLOWED_ORIGINS.includes(origin)) {
         return callback(null, true);
       }
@@ -29,11 +39,6 @@ app.use(
 
 app.use(express.json({ limit: "1mb" }));
 
-const EMAIL_USER = process.env.EMAIL_USER;
-const EMAIL_PASS = process.env.EMAIL_PASS;
-const QUOTE_RECEIVER_EMAIL =
-  process.env.QUOTE_RECEIVER_EMAIL || EMAIL_USER;
-
 const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
@@ -41,6 +46,18 @@ const transporter = nodemailer.createTransport({
     pass: EMAIL_PASS
   }
 });
+
+const supabase = createClient(
+  SUPABASE_URL || "https://placeholder.supabase.co",
+  SUPABASE_SECRET_KEY || "placeholder-key",
+  {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false
+    }
+  }
+);
 
 function clean(value) {
   const text = String(value || "").trim();
@@ -85,13 +102,25 @@ Size / Notes: ${clean(item.notes)}`;
   return clean(data.pickupItemsText || data.description);
 }
 
-function sendEmail(subject, text, replyTo) {
-  if (!EMAIL_USER || !EMAIL_PASS || !QUOTE_RECEIVER_EMAIL) {
-    throw new Error(
-      "Email settings are missing. Add EMAIL_USER, EMAIL_PASS, and QUOTE_RECEIVER_EMAIL in Render."
-    );
+function ensureServerSettings() {
+  const missing = [];
+
+  if (!EMAIL_USER) missing.push("EMAIL_USER");
+  if (!EMAIL_PASS) missing.push("EMAIL_PASS");
+  if (!QUOTE_RECEIVER_EMAIL) missing.push("QUOTE_RECEIVER_EMAIL");
+  if (!SUPABASE_URL) missing.push("SUPABASE_URL");
+  if (!SUPABASE_SECRET_KEY) {
+    missing.push("SUPABASE_SECRET_KEY");
   }
 
+  if (missing.length > 0) {
+    throw new Error(
+      `Missing Render environment variables: ${missing.join(", ")}`
+    );
+  }
+}
+
+function sendEmail(subject, text, replyTo) {
   return transporter.sendMail({
     from: `"Logistics Carrier LLC" <${EMAIL_USER}>`,
     to: QUOTE_RECEIVER_EMAIL,
@@ -243,7 +272,6 @@ Preferred Pickup Window: ${clean(
 Item Paid For: ${clean(data.isPaid)}
 Pickup Ready: ${clean(data.pickupReady)}
 Pickup Instructions: ${clean(data.pickupInstructions)}
-Pickup Authorization: ${clean(data.authorizationAgreement)}
 
 ==================================================
 DELIVERY INFORMATION
@@ -256,7 +284,6 @@ Automatic Delivery Type: ${clean(data.deliveryDistanceType)}
 Delivery Location Type: ${clean(data.deliveryLocationType)}
 Recipient Present: ${clean(data.someonePresent)}
 Delivery Instructions: ${clean(data.deliveryInstructions)}
-Unattended Drop-Off Authorization: ${clean(data.dropoffAgreement)}
 
 ==================================================
 ITEM DETAILS
@@ -284,21 +311,10 @@ Loaded Mileage Charge: $${clean(data.loadedMileageCharge || "0.00")}
 Additional Items Fee: $${clean(data.additionalItemsFee || "0.00")}
 
 ==================================================
-AGREEMENTS & ELECTRONIC SIGNATURE
+ELECTRONIC SIGNATURE
 ==================================================
 
-Accuracy Agreement: ${clean(data.accuracyAgreement)}
-Quote Agreement: ${clean(data.quoteAgreement)}
-Contact Agreement: ${clean(data.contactAgreement)}
-Cancellation Agreement: ${clean(data.cancellationAgreement)}
-Refund Agreement: ${clean(data.refundAgreement)}
-Completed Delivery Non-Refundable Agreement: ${clean(
-  data.nonRefundableAgreement
-)}
 Typed Electronic Signature: ${clean(data.signatureName)}
-Electronic Signature Agreement: ${clean(
-  data.electronicSignatureAgreement
-)}
 Signed At: ${clean(data.signedAt)}
 
 ==================================================
@@ -356,7 +372,7 @@ Item Types: ${clean(data.itemTypes)}
 Weight Range: ${clean(data.weightRange)}
 Loading Assistance: ${clean(data.loadingAssistance)}
 Liftgate Service: ${clean(data.liftgateService)}
-TWIC / Secure Access Support: ${clean(data.twicSupport)}
+TWIC Support: ${clean(data.twicSupport)}
 
 ==================================================
 BILLING INFORMATION
@@ -386,20 +402,8 @@ Preferred Start Date: ${clean(data.preferredStartDate)}
 AUTHORIZED REPRESENTATIVE
 ==================================================
 
-Commercial Account Consent: ${clean(data.commercialAccountConsent)}
 Typed Authorized Signature: ${clean(data.authorizedSignatureName)}
-Electronic Signature Agreement: ${clean(
-  data.electronicSignatureAgreement
-)}
 Signed At: ${clean(data.signedAt)}
-
-==================================================
-INTERNAL STATUS
-==================================================
-
-Status: Commercial Account Request Submitted
-Payment Status: Not Applicable
-Delivery Status: Not Scheduled
 `;
 }
 
@@ -419,23 +423,67 @@ app.get("/health", (req, res) => {
 
 app.post("/api/submit-quote", async (req, res) => {
   try {
-    const data = req.body || {};
-    const error = validateQuote(data);
+    ensureServerSettings();
 
-    if (error) {
+    const data = req.body || {};
+    const validationError = validateQuote(data);
+
+    if (validationError) {
       return res.status(400).json({
         success: false,
-        error
+        error: validationError
       });
     }
 
     const trackingNumber = generateReferenceNumber("LC");
 
-    await sendEmail(
-      `New Delivery Quote Request — ${trackingNumber}`,
-      buildQuoteEmail(data, trackingNumber),
-      data.customerEmail
-    );
+    const { error: supabaseError } = await supabase
+      .from("quote_requests")
+      .insert({
+        tracking_number: trackingNumber,
+        customer_name: data.customerName,
+        customer_phone: data.customerPhone,
+        customer_email: data.customerEmail,
+        contact_method: data.contactMethod,
+        store_name: data.storeName,
+        order_number: data.orderNumber || null,
+        pickup_address: data.pickupAddress,
+        pickup_date: data.pickupDate,
+        pickup_window: data.pickupWindow,
+        pickup_state: data.pickupState || null,
+        delivery_address: data.deliveryAddress,
+        delivery_state: data.deliveryState || null,
+        delivery_type: data.deliveryDistanceType || null,
+        delivery_location_type: data.deliveryLocationType,
+        someone_present: data.someonePresent,
+        delivery_instructions: data.deliveryInstructions,
+        loaded_miles: Number(data.loadedMiles) || null,
+        estimated_quote: Number(
+          String(data.quoteAmount || data.estimatedQuote || "")
+            .replace("$", "")
+            .replace(",", "")
+        ) || null,
+        status: "Quote Submitted",
+        payment_status: "Payment Link Not Sent",
+        delivery_status: "Not Scheduled",
+        signature_name: data.signatureName,
+        signed_at: data.signedAt || new Date().toISOString(),
+        form_data: data
+      });
+
+    if (supabaseError) {
+      throw new Error(`Supabase error: ${supabaseError.message}`);
+    }
+
+    try {
+      await sendEmail(
+        `New Delivery Quote Request — ${trackingNumber}`,
+        buildQuoteEmail(data, trackingNumber),
+        data.customerEmail
+      );
+    } catch (emailError) {
+      console.error("Quote saved, but email failed:", emailError.message);
+    }
 
     return res.status(201).json({
       success: true,
@@ -454,23 +502,63 @@ app.post("/api/submit-quote", async (req, res) => {
 
 app.post("/api/submit-commercial-account", async (req, res) => {
   try {
-    const data = req.body || {};
-    const error = validateCommercialAccount(data);
+    ensureServerSettings();
 
-    if (error) {
+    const data = req.body || {};
+    const validationError = validateCommercialAccount(data);
+
+    if (validationError) {
       return res.status(400).json({
         success: false,
-        error
+        error: validationError
       });
     }
 
     const accountReference = generateReferenceNumber("BIZ");
 
-    await sendEmail(
-      `New Commercial Account Request — ${accountReference}`,
-      buildCommercialEmail(data, accountReference),
-      data.contactEmail || data.email
-    );
+    const { error: supabaseError } = await supabase
+      .from("commercial_account_requests")
+      .insert({
+        account_reference: accountReference,
+        business_name: data.businessName,
+        business_type: data.businessType,
+        business_address: data.businessAddress,
+        business_city: data.businessCity,
+        business_state: data.businessState,
+        business_zip: data.businessZip,
+        business_phone: data.phone,
+        business_email: data.email,
+        contact_person: data.contactPerson,
+        contact_email: data.contactEmail,
+        contact_phone: data.mobileNumber,
+        contact_method: data.contactMethod,
+        delivery_types: data.deliveryTypes,
+        delivery_area: data.deliveryArea,
+        estimated_deliveries: data.estimatedDeliveries,
+        billing_method: data.billingMethod,
+        delivery_needs: data.deliveryNeeds,
+        authorized_signature_name: data.authorizedSignatureName,
+        signed_at: data.signedAt || new Date().toISOString(),
+        status: "Commercial Account Request Submitted",
+        form_data: data
+      });
+
+    if (supabaseError) {
+      throw new Error(`Supabase error: ${supabaseError.message}`);
+    }
+
+    try {
+      await sendEmail(
+        `New Commercial Account Request — ${accountReference}`,
+        buildCommercialEmail(data, accountReference),
+        data.contactEmail || data.email
+      );
+    } catch (emailError) {
+      console.error(
+        "Commercial account saved, but email failed:",
+        emailError.message
+      );
+    }
 
     return res.status(201).json({
       success: true,
