@@ -16,7 +16,6 @@ const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SECRET_KEY =
   process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-// Add your live website domains here.
 const ALLOWED_ORIGINS = [
   "https://logistics-carrier.com",
   "https://www.logistics-carrier.com"
@@ -25,7 +24,6 @@ const ALLOWED_ORIGINS = [
 app.use(
   cors({
     origin: function (origin, callback) {
-      // Allows Render, Postman, and direct testing.
       if (!origin || ALLOWED_ORIGINS.includes(origin)) {
         return callback(null, true);
       }
@@ -109,9 +107,7 @@ function ensureServerSettings() {
   if (!EMAIL_PASS) missing.push("EMAIL_PASS");
   if (!QUOTE_RECEIVER_EMAIL) missing.push("QUOTE_RECEIVER_EMAIL");
   if (!SUPABASE_URL) missing.push("SUPABASE_URL");
-  if (!SUPABASE_SECRET_KEY) {
-    missing.push("SUPABASE_SECRET_KEY");
-  }
+  if (!SUPABASE_SECRET_KEY) missing.push("SUPABASE_SECRET_KEY");
 
   if (missing.length > 0) {
     throw new Error(
@@ -128,6 +124,17 @@ function sendEmail(subject, text, replyTo) {
     subject,
     text
   });
+}
+
+function moneyToNumber(value) {
+  const numberValue = Number(
+    String(value || "")
+      .replace("$", "")
+      .replace(",", "")
+      .trim()
+  );
+
+  return Number.isNaN(numberValue) ? null : numberValue;
 }
 
 function validateQuote(data) {
@@ -266,9 +273,7 @@ Store / Seller: ${clean(data.storeName || data.sellerName)}
 Order Number: ${clean(data.orderNumber)}
 Pickup Address: ${clean(data.pickupAddress || data.pickup)}
 Preferred Pickup Date: ${clean(data.pickupDate)}
-Preferred Pickup Window: ${clean(
-  data.pickupWindow || data.preferredPickupWindow
-)}
+Preferred Pickup Window: ${clean(data.pickupWindow || data.preferredPickupWindow)}
 Item Paid For: ${clean(data.isPaid)}
 Pickup Ready: ${clean(data.pickupReady)}
 Pickup Instructions: ${clean(data.pickupInstructions)}
@@ -300,12 +305,8 @@ QUOTE CALCULATION
 Estimated Quote: ${clean(data.quoteAmount || data.estimatedQuote)}
 Loaded Miles: ${clean(data.loadedMiles)}
 Estimated Drive Time: ${clean(data.estimatedDriveTime)}
-Distance Surcharge Miles: ${clean(
-  data.distanceSurchargeMiles || data.deadheadMiles
-)}
-Distance Surcharge Charge: $${clean(
-  data.distanceSurchargeCharge || data.deadheadCharge || "0.00"
-)}
+Distance Surcharge Miles: ${clean(data.distanceSurchargeMiles || data.deadheadMiles)}
+Distance Surcharge Charge: $${clean(data.distanceSurchargeCharge || data.deadheadCharge || "0.00")}
 Base Rate: $${clean(data.baseRate || "0.00")}
 Loaded Mileage Charge: $${clean(data.loadedMileageCharge || "0.00")}
 Additional Items Fee: $${clean(data.additionalItemsFee || "0.00")}
@@ -437,37 +438,57 @@ app.post("/api/submit-quote", async (req, res) => {
 
     const trackingNumber = generateReferenceNumber("LC");
 
+    const estimatedQuoteNumber = moneyToNumber(
+      data.quoteAmount || data.estimatedQuote
+    );
+
     const { error: supabaseError } = await supabase
       .from("quote_requests")
       .insert({
         tracking_number: trackingNumber,
+        form_type: data.formType || "Pickup & Delivery Quote Request",
+
         customer_name: data.customerName,
         customer_phone: data.customerPhone,
         customer_email: data.customerEmail,
         contact_method: data.contactMethod,
+
         store_name: data.storeName,
         order_number: data.orderNumber || null,
+
         pickup_address: data.pickupAddress,
         pickup_date: data.pickupDate,
         pickup_window: data.pickupWindow,
         pickup_state: data.pickupState || null,
+
         delivery_address: data.deliveryAddress,
         delivery_state: data.deliveryState || null,
         delivery_type: data.deliveryDistanceType || null,
         delivery_location_type: data.deliveryLocationType,
         someone_present: data.someonePresent,
         delivery_instructions: data.deliveryInstructions,
+
         loaded_miles: Number(data.loadedMiles) || null,
-        estimated_quote: Number(
-          String(data.quoteAmount || data.estimatedQuote || "")
-            .replace("$", "")
-            .replace(",", "")
-        ) || null,
+        estimated_drive_time: data.estimatedDriveTime || null,
+        distance_surcharge_miles:
+          Number(data.distanceSurchargeMiles || data.deadheadMiles) || null,
+        distance_surcharge_charge:
+          Number(data.distanceSurchargeCharge || data.deadheadCharge) || null,
+
+        base_rate: Number(data.baseRate) || null,
+        loaded_mileage_charge: Number(data.loadedMileageCharge) || null,
+        additional_items_fee: Number(data.additionalItemsFee) || null,
+
+        estimated_quote: estimatedQuoteNumber,
+        quote_amount: data.quoteAmount || data.estimatedQuote || null,
+
         status: "Quote Submitted",
         payment_status: "Payment Link Not Sent",
         delivery_status: "Not Scheduled",
+
         signature_name: data.signatureName,
         signed_at: data.signedAt || new Date().toISOString(),
+
         form_data: data
       });
 
@@ -490,12 +511,13 @@ app.post("/api/submit-quote", async (req, res) => {
       message: "Quote request submitted successfully.",
       trackingNumber
     });
+
   } catch (error) {
     console.error("Quote request error:", error);
 
     return res.status(500).json({
       success: false,
-      error: "Unable to submit quote request. Please try again."
+      error: error.message || "Unable to submit quote request. Please try again."
     });
   }
 });
@@ -565,12 +587,89 @@ app.post("/api/submit-commercial-account", async (req, res) => {
       message: "Commercial account request submitted successfully.",
       accountReference
     });
+
   } catch (error) {
     console.error("Commercial account request error:", error);
 
     return res.status(500).json({
       success: false,
-      error: "Unable to submit commercial account request. Please try again."
+      error:
+        error.message ||
+        "Unable to submit commercial account request. Please try again."
+    });
+  }
+});
+
+/*
+  TRACKING LOOKUP ROUTE
+
+  This route lets your tracking page search Supabase by tracking number.
+  Your tracking page calls:
+  https://delivery-quote-backend-5bxl.onrender.com/api/track/LC-XXXXXXXX-XXXXXX
+*/
+app.get("/api/track/:trackingNumber", async (req, res) => {
+  try {
+    ensureServerSettings();
+
+    const trackingNumber = String(req.params.trackingNumber || "")
+      .trim()
+      .toUpperCase();
+
+    if (!trackingNumber) {
+      return res.status(400).json({
+        success: false,
+        error: "Tracking number is required."
+      });
+    }
+
+    const { data, error } = await supabase
+      .from("quote_requests")
+      .select(`
+        tracking_number,
+        customer_name,
+        pickup_address,
+        delivery_address,
+        status,
+        payment_status,
+        delivery_status,
+        estimated_quote,
+        quote_amount,
+        created_at,
+        form_data
+      `)
+      .eq("tracking_number", trackingNumber)
+      .single();
+
+    if (error || !data) {
+      return res.status(404).json({
+        success: false,
+        error: "Tracking number not found."
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      tracking: {
+        tracking_number: data.tracking_number,
+        customer_name: data.customer_name,
+        pickup_address: data.pickup_address,
+        delivery_address: data.delivery_address,
+        status: data.status || "Quote Submitted",
+        payment_status: data.payment_status || "Payment Link Not Sent",
+        delivery_status: data.delivery_status || "Not Scheduled",
+        estimated_quote: data.estimated_quote,
+        quote_amount: data.quote_amount,
+        created_at: data.created_at,
+        pod_photo_url: data.form_data?.pod_photo_url || null
+      }
+    });
+
+  } catch (error) {
+    console.error("Tracking lookup error:", error);
+
+    return res.status(500).json({
+      success: false,
+      error: error.message || "Unable to look up tracking information."
     });
   }
 });
